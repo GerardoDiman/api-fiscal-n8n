@@ -5,10 +5,10 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# --- LÍNEA DE IMPORTACIÓN CORREGIDA ---
-from satcfdi import Fiel
+# --- LÍNEA DE IMPORTACIÓN CORREGIDA Y DEFINITIVA ---
+from satcfdi.certifica import Certificate
 
-# (El resto del código es idéntico al que ya tenías y es correcto)
+# (El resto del código es idéntico y correcto)
 class XMLRequest(BaseModel):
     xml_data: str
 
@@ -19,13 +19,6 @@ class DownloadRequest(BaseModel):
     efirma_password: str
 
 app = FastAPI()
-# ... (Aquí va el resto de tus endpoints: /test, /parse_xml/, /descargar-xmls/)
-# ...
-
-# --- ENDPOINTS DE LA API ---
-@app.get("/")
-def root():
-    return {"status": "API en línea y funcionando"}
 
 @app.get("/test")
 def test_endpoint():
@@ -33,8 +26,8 @@ def test_endpoint():
 
 @app.post("/parse_xml/")
 async def parse_xml_endpoint(request: XMLRequest):
+    xml_content = request.xml_data
     # (Aquí va tu lógica de parseo que ya funcionaba)
-    # ...
     return {"status": "parseado con éxito"}
 
 @app.post("/descargar-xmls/")
@@ -53,10 +46,10 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         key_path = key_file.name
 
     try:
-        fiel = Fiel(cer_path=cer_path, key_path=key_path, password=request.efirma_password)
-        portal = fiel.get_portal_cfdi()
+        certificate = Certificate(cer_path=cer_path, key_path=key_path, password=request.efirma_password)
+        portal = certificate.get_portal_cfdi()
         end_date = date.today()
-        start_date = end_date - timedelta(days=1)
+        start_date = end_date - timedelta(days=5) # Ampliamos el rango a 5 días para más probabilidad de encontrar facturas
         
         facturas = portal.search_received(start_date=start_date, end_date=end_date)
         
