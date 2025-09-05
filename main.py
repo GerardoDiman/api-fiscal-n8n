@@ -1,5 +1,4 @@
 import base64
-import os
 import time
 from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
@@ -46,18 +45,33 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         end_date = date.today()
         start_date = end_date - timedelta(days=5)
         
-        # Corrección: Usar una cadena de texto en lugar de DownloadType
-        packages = sat_service.descarga_masiva(
+        # Paso 1: Solicitar la descarga
+        # 'descarga_masiva' no existe, así que usamos el proceso de dos pasos.
+        solicitud_id = sat_service.solicita_descarga(
             start_date=start_date,
             end_date=end_date,
             download_type="received"
         )
         
-        xmls_encontrados = []
-        for pkg in packages:
-            for xml_content in pkg.cfdis:
-                xmls_encontrados.append(xml_content.decode('utf-8'))
+        # Paso 2: Verificar el estado de la solicitud
+        estado_solicitud = sat_service.verifica_solicitud_descarga(solicitud_id)
         
+        # Bucle de espera. El SAT no procesa al instante, así que esperamos.
+        while estado_solicitud.status == "in_progress":
+            time.sleep(30) # Espera 30 segundos
+            estado_solicitud = sat_service.verifica_solicitud_descarga(solicitud_id)
+        
+        # Obtiene la lista de paquetes disponibles para descargar
+        paquetes_ids = estado_solicitud.packages_ids
+
+        xmls_encontrados = []
+        if paquetes_ids:
+            for paquete_id in paquetes_ids:
+                # Descarga cada paquete
+                paquete_data = sat_service.descargar_paquete(paquete_id)
+                for xml_content in paquete_data.cfdis:
+                    xmls_encontrados.append(xml_content.decode('utf-8'))
+
         if not xmls_encontrados:
             return {
                 "status": f"Descarga completa. No se encontraron facturas recibidas entre {start_date} y {end_date}.",
@@ -70,4 +84,3 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {str(e)}")
-        
