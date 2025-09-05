@@ -61,3 +61,28 @@ async def parse_xml_endpoint(request: XMLRequest):
         return parsed_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al parsear el XML: {str(e)}")
+
+# Modelo para la nueva petición de descarga
+class DownloadRequest(BaseModel):
+    rfc: str
+    # En el futuro, aquí pasaríamos las credenciales de la e.firma de forma segura
+
+# Nuevo endpoint para iniciar la descarga
+@app.post("/descargar-xmls/")
+async def descargar_xmls_endpoint(request: DownloadRequest):
+    rfc_cliente = request.rfc
+
+    # --- AQUÍ IRÁ LA LÓGICA COMPLEJA DE CONEXIÓN AL SAT ---
+    # 1. Autenticar con la e.firma.
+    # 2. Crear la solicitud de descarga para un rango de fechas.
+    # 3. Verificar periódicamente el estado de la solicitud.
+    # 4. Descargar los paquetes ZIP cuando estén listos.
+    # 5. Extraer todos los XML de los ZIPs.
+    # ----------------------------------------------------
+
+    # Por ahora, para construir el flujo, simularemos una respuesta exitosa
+    # devolviendo el contenido de nuestro XML de prueba en una lista.
+    xml_de_prueba = '<?xml version="1.0" encoding="utf-8"?><cfdi:Comprobante Version="4.0" Fecha="2024-04-29T00:00:55" SubTotal="200" Moneda="MXN" Total="199.96" TipoDeComprobante="I" xmlns:cfdi="http://www.sat.gob.mx/cfd/4"><cfdi:Emisor Rfc="EKU9003173C9" Nombre="ESCUELA KPER URGATE" RegimenFiscal="601" /><cfdi:Receptor Rfc="URE180429TM6" Nombre="UNIVERSIDAD ROBOTICA ESPAÑOLA" UsoCFDI="G01" /></cfdi:Comprobante>'
+
+    # La API debe devolver una lista de los XMLs encontrados
+    return {"status": "descarga simulada completa", "xmls": [xml_de_prueba]}
