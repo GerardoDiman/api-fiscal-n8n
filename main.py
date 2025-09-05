@@ -5,10 +5,11 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# --- IMPORTACIÓN CORREGIDA - MÓDULO CORRECTO ---
-from satcfdi.certifica import Certificate
+# --- IMPORTACIONES CORRECTAS BASADAS EN LA DOCUMENTACIÓN QUE ENCONTRASTE ---
+from satcfdi.models import Signer
+from satcfdi.pacs import sat
 
-# (El resto del código es idéntico y correcto)
+# (El resto de los modelos no cambia)
 class XMLRequest(BaseModel):
     xml_data: str
 
@@ -26,8 +27,7 @@ def test_endpoint():
 
 @app.post("/parse_xml/")
 async def parse_xml_endpoint(request: XMLRequest):
-    xml_content = request.xml_data
-    # (Aquí va tu lógica de parseo que ya funcionaba)
+    # (Tu lógica de parseo va aquí)
     return {"status": "parseado con éxito"}
 
 @app.post("/descargar-xmls/")
@@ -38,29 +38,35 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error al decodificar la e.firma: {e}")
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".cer") as cer_file, \
-         tempfile.NamedTemporaryFile(delete=False, suffix=".key") as key_file:
-        cer_file.write(cer_bytes)
-        key_file.write(key_bytes)
-        cer_path = cer_file.name
-        key_path = key_file.name
-
     try:
-        certificate = Certificate(cer_path=cer_path, key_path=key_path, password=request.efirma_password)
-        portal = certificate.get_portal_cfdi()
+        # --- LÓGICA DE DESCARGA ACTUALIZADA CON 'Signer' ---
+        signer = Signer.load(
+            cer=cer_bytes,
+            key=key_bytes,
+            password=request.efirma_password
+        )
+        
+        sat_service = sat.SAT(signer=signer)
+        
         end_date = date.today()
         start_date = end_date - timedelta(days=5)
         
-        facturas = portal.search_received(start_date=start_date, end_date=end_date)
+        # El método para descargar es más directo con este objeto
+        packages = sat_service.download_received(
+            start_date=start_date,
+            end_date=end_date
+        )
         
-        xmls_encontrados = [f.xml.decode('utf-8') for f in facturas]
+        xmls_encontrados = []
+        for pkg in packages.values():
+            for xml_content in pkg.cfdis:
+                # El contenido ya viene en bytes, solo hay que decodificarlo
+                xmls_encontrados.append(xml_content.decode('utf-8'))
 
         return {
             "status": f"Descarga completa. Se encontraron {len(xmls_encontrados)} facturas recibidas entre {start_date} y {end_date}.",
             "xmls": xmls_encontrados
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {e}")
-    finally:
-        os.remove(cer_path)
-        os.remove(key_path)
+        # Es importante devolver el error específico para saber qué falló
+        raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {str(e)}")
