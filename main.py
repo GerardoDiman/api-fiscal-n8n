@@ -4,7 +4,8 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from satcfdi.models import Signer
-from satcfdi.pacs.sat import SAT, TipoDescargaMasiva, EstadoSolicitud, TipoDescargaMasivaTerceros
+# Se corrige la importación basándose en el error
+from satcfdi.pacs.sat import SAT, EstadoSolicitud, _CFDIDescargaMasiva, TipoDescargaMasivaTerceros
 
 class XMLRequest(BaseModel):
     xml_data: str
@@ -46,12 +47,12 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         start_date = end_date - timedelta(days=5)
 
         # Paso 1: Solicitar la descarga de facturas recibidas
-        # recover_comprobante_received_request es para facturas recibidas
+        # Se usa el tipo de descarga correcto para esta versión
         response = sat_service.recover_comprobante_received_request(
             fecha_inicial=start_date,
             fecha_final=end_date,
-            rfc_emisor="", # El rfc del emisor no es necesario para facturas recibidas, se deja vacío
-            tipo_solicitud=TipoDescargaMasivaTerceros.CFDI
+            rfc_emisor="",
+            tipo_solicitud=_CFDIDescargaMasiva.recibidas
         )
         
         id_solicitud = response.get('IdSolicitud')
@@ -59,7 +60,6 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
              raise HTTPException(status_code=500, detail="No se pudo obtener el IdSolicitud del SAT.")
 
         # Paso 2: Revisar estado de descarga
-        # Bucle de espera. Puede tardar varios minutos.
         while True:
             response_status = sat_service.recover_comprobante_status(id_solicitud)
             estado_solicitud = response_status.get("EstadoSolicitud")
@@ -69,7 +69,6 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
             elif estado_solicitud == EstadoSolicitud.RECHAZADA:
                 raise HTTPException(status_code=500, detail="Solicitud de descarga rechazada por el SAT.")
             
-            # Si no ha terminado, espera 30 segundos antes de volver a verificar
             time.sleep(30)
             
         # Paso 3: Descargar los paquetes
@@ -78,12 +77,9 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
             response_download, paquete_zip = sat_service.recover_comprobante_download(
                 id_paquete=id_paquete
             )
-            # El paquete zip contiene los XMLs, necesitas descomprimirlos para leerlos
-            # Esta parte del código es un poco más compleja y requeriría una librería como 'zipfile'
-            # Por simplicidad, este ejemplo asume que puedes extraer los XMLs de un .zip
-            # y los devuelve en una lista.
-            # Aquí se asume que paquete_zip es el contenido de un .zip que contiene los XMLs
-            # Y se omite la lógica de descompresión para no complicar el ejemplo
+            # Aquí va la lógica para descomprimir y procesar el .zip
+            # que necesitaría una librería como 'zipfile'
+            # (Código omitido por simplicidad)
 
         if not xmls_encontrados:
             return {
