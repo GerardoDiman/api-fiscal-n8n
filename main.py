@@ -4,12 +4,9 @@ import tempfile
 from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
-# --- IMPORTACIONES CORRECTAS BASADAS EN LA DOCUMENTACIÓN QUE ENCONTRASTE ---
 from satcfdi.models import Signer
 from satcfdi.pacs import sat
 
-# (El resto de los modelos no cambia)
 class XMLRequest(BaseModel):
     xml_data: str
 
@@ -39,9 +36,9 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         raise HTTPException(status_code=400, detail=f"Error al decodificar la e.firma: {e}")
 
     try:
-        # --- LÓGICA DE DESCARGA ACTUALIZADA CON 'Signer' ---
+        # --- LÓGICA DE DESCARGA CON EL PARÁMETRO CORREGIDO ---
         signer = Signer.load(
-            cer=cer_bytes,
+            certificate=cer_bytes, # <-- CORREGIDO: de 'cer' a 'certificate'
             key=key_bytes,
             password=request.efirma_password
         )
@@ -51,16 +48,11 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         end_date = date.today()
         start_date = end_date - timedelta(days=5)
         
-        # El método para descargar es más directo con este objeto
-        packages = sat_service.download_received(
-            start_date=start_date,
-            end_date=end_date
-        )
+        packages = sat_service.download_received(start_date=start_date, end_date=end_date)
         
         xmls_encontrados = []
-        for pkg in packages.values():
-            for xml_content in pkg.cfdis:
-                # El contenido ya viene en bytes, solo hay que decodificarlo
+        for pkg_id, pkg_data in packages.items():
+            for xml_content in pkg_data.cfdis:
                 xmls_encontrados.append(xml_content.decode('utf-8'))
 
         return {
@@ -68,5 +60,4 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
             "xmls": xmls_encontrados
         }
     except Exception as e:
-        # Es importante devolver el error específico para saber qué falló
         raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {str(e)}")
