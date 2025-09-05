@@ -4,8 +4,7 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from satcfdi.models import Signer
-# Se corrige la importación basándose en el error
-from satcfdi.pacs.sat import SAT, EstadoSolicitud, _CFDIDescargaMasiva, TipoDescargaMasivaTerceros
+from satcfdi.pacs.sat import SAT, EstadoSolicitud, TipoDescargaMasivaTerceros
 
 class XMLRequest(BaseModel):
     xml_data: str
@@ -47,12 +46,12 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         start_date = end_date - timedelta(days=5)
 
         # Paso 1: Solicitar la descarga de facturas recibidas
-        # Se usa el tipo de descarga correcto para esta versión
+        # Se usa la cadena de texto "recibidas" para mayor compatibilidad
         response = sat_service.recover_comprobante_received_request(
             fecha_inicial=start_date,
             fecha_final=end_date,
             rfc_emisor="",
-            tipo_solicitud=_CFDIDescargaMasiva.recibidas
+            tipo_solicitud="CFDI"
         )
         
         id_solicitud = response.get('IdSolicitud')
@@ -77,8 +76,7 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
             response_download, paquete_zip = sat_service.recover_comprobante_download(
                 id_paquete=id_paquete
             )
-            # Aquí va la lógica para descomprimir y procesar el .zip
-            # que necesitaría una librería como 'zipfile'
+            # La lógica para descomprimir y procesar el .zip va aquí
             # (Código omitido por simplicidad)
 
         if not xmls_encontrados:
