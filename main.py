@@ -6,7 +6,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from satcfdi.models import Signer
 from satcfdi.pacs import sat
-from satcfdi.models import DownloadType
 
 class XMLRequest(BaseModel):
     xml_data: str
@@ -47,11 +46,11 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         end_date = date.today()
         start_date = end_date - timedelta(days=5)
         
-        # Realiza la solicitud de descarga y espera el resultado
+        # Corrección: Usar una cadena de texto en lugar de DownloadType
         packages = sat_service.descarga_masiva(
             start_date=start_date,
             end_date=end_date,
-            download_type=DownloadType.received
+            download_type="received"
         )
         
         xmls_encontrados = []
