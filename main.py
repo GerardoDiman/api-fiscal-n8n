@@ -1,11 +1,12 @@
 import base64
 import os
-import tempfile
+import time
 from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from satcfdi.models import Signer
 from satcfdi.pacs import sat
+from satcfdi.models import DownloadType
 
 class XMLRequest(BaseModel):
     xml_data: str
@@ -24,7 +25,6 @@ def test_endpoint():
 
 @app.post("/parse_xml/")
 async def parse_xml_endpoint(request: XMLRequest):
-    # (Tu lógica de parseo va aquí)
     return {"status": "parseado con éxito"}
 
 @app.post("/descargar-xmls/")
@@ -36,8 +36,6 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         raise HTTPException(status_code=400, detail=f"Error al decodificar la e.firma: {e}")
 
     try:
-        # El parámetro correcto es 'certificate', no 'cer'.
-        # Además, es 'key' y 'password'.
         signer = Signer.load(
             certificate=cer_bytes,
             key=key_bytes,
@@ -49,15 +47,18 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         end_date = date.today()
         start_date = end_date - timedelta(days=5)
         
-        # El RFC en la solicitud es útil para referencia, pero la función download_received
-        # lo toma automáticamente de la e.firma.
-        packages = sat_service.download_received(start_date=start_date, end_date=end_date)
+        # Realiza la solicitud de descarga y espera el resultado
+        packages = sat_service.descarga_masiva(
+            start_date=start_date,
+            end_date=end_date,
+            download_type=DownloadType.received
+        )
         
         xmls_encontrados = []
-        for pkg_id, pkg_data in packages.items():
-            for xml_content in pkg_data.cfdis:
+        for pkg in packages:
+            for xml_content in pkg.cfdis:
                 xmls_encontrados.append(xml_content.decode('utf-8'))
-
+        
         if not xmls_encontrados:
             return {
                 "status": f"Descarga completa. No se encontraron facturas recibidas entre {start_date} y {end_date}.",
@@ -69,5 +70,4 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
             "xmls": xmls_encontrados
         }
     except Exception as e:
-        # Este mensaje de error es crucial. Si la e.firma es inválida, te dirá por qué.
         raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {str(e)}")
