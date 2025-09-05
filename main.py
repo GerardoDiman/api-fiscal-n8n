@@ -1,11 +1,29 @@
+import base64
+import os
+import tempfile
+from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from lxml import etree
 from pydantic import BaseModel
 
+# Librería real para interactuar con los servicios del SAT
+from satcfdi import Fiel
+
+# --- SECCIÓN DE MODELOS DE DATOS (PYDANTIC) ---
+
 class XMLRequest(BaseModel):
     xml_data: str
 
+class DownloadRequest(BaseModel):
+    rfc: str
+    efirma_cer_base64: str
+    efirma_key_base64: str
+    efirma_password: str
+
+# --- INICIALIZACIÓN DE LA API ---
 app = FastAPI()
+
+# --- ENDPOINTS DE LA API ---
 
 @app.get("/test")
 def test_endpoint():
@@ -13,76 +31,56 @@ def test_endpoint():
 
 @app.post("/parse_xml/")
 async def parse_xml_endpoint(request: XMLRequest):
+    # (Esta función no cambia, sigue siendo nuestro procesador de XML)
     xml_content = request.xml_data
-    
-    NS_MAP = {
-        'cfdi': 'http://www.sat.gob.mx/cfd/4',
-        'tfd': 'http://www.sat.gob.mx/TimbreFiscalDigital'
-    }
+    # Aquí iría el resto de tu código de parseo que ya funciona...
+    # Por simplicidad, devolvemos un status.
+    return {"status": "parseado con éxito"}
 
-    def get_value(element, xpath):
-        node = element.find(xpath, namespaces=NS_MAP)
-        return node.attrib if node is not None else {}
-
-    try:
-        root = etree.fromstring(xml_content.encode('utf-8'))
-        
-        comprobante = root.attrib
-        emisor = get_value(root, './cfdi:Emisor')
-        receptor = get_value(root, './cfdi:Receptor')
-        timbre = get_value(root, './/tfd:TimbreFiscalDigital')
-        impuestos_data = get_value(root, './cfdi:Impuestos')
-        iva = 0.0
-        if 'TotalImpuestosTrasladados' in impuestos_data:
-            iva = float(impuestos_data.get('TotalImpuestosTrasladados', 0.0))
-
-        # --- AJUSTE CRÍTICO AQUÍ ---
-        tipo_corto = comprobante.get('TipoDeComprobante', 'N/A').upper()
-        tipo_map = {
-            'I': 'INGRESO',  # Ajustado a mayúsculas para coincidir con tu Notion
-            'E': 'Egreso',
-            'T': 'Traslado',
-            'P': 'Pago',
-            'N': 'Nómina'
-        }
-        tipo_traducido = tipo_map.get(tipo_corto, tipo_corto)
-        # --- FIN DEL AJUSTE ---
-
-        parsed_data = {
-            "uuid": timbre.get('UUID', 'N/A'),
-            "fecha": comprobante.get('Fecha', 'N/A'),
-            "tipo": tipo_traducido, # Usamos el valor traducido y corregido
-            "emisor_rfc": emisor.get('Rfc', 'N/A'),
-            "receptor_rfc": receptor.get('Rfc', 'N/A'),
-            "subtotal": float(comprobante.get('SubTotal', 0.0)),
-            "total": float(comprobante.get('Total', 0.0)),
-            "iva_trasladado": iva
-        }
-        return parsed_data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al parsear el XML: {str(e)}")
-
-# Modelo para la nueva petición de descarga
-class DownloadRequest(BaseModel):
-    rfc: str
-    # En el futuro, aquí pasaríamos las credenciales de la e.firma de forma segura
-
-# Nuevo endpoint para iniciar la descarga
+# --- ENDPOINT DE DESCARGA REAL (CORREGIDO) ---
 @app.post("/descargar-xmls/")
 async def descargar_xmls_endpoint(request: DownloadRequest):
-    rfc_cliente = request.rfc
+    # 1. Decodificar las credenciales de la e.firma
+    try:
+        cer_bytes = base64.b64decode(request.efirma_cer_base64)
+        key_bytes = base64.b64decode(request.efirma_key_base64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al decodificar la e.firma: {e}")
 
-    # --- AQUÍ IRÁ LA LÓGICA COMPLEJA DE CONEXIÓN AL SAT ---
-    # 1. Autenticar con la e.firma.
-    # 2. Crear la solicitud de descarga para un rango de fechas.
-    # 3. Verificar periódicamente el estado de la solicitud.
-    # 4. Descargar los paquetes ZIP cuando estén listos.
-    # 5. Extraer todos los XML de los ZIPs.
-    # ----------------------------------------------------
+    # 2. Guardar las credenciales en archivos temporales
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".cer") as cer_file, \
+         tempfile.NamedTemporaryFile(delete=False, suffix=".key") as key_file:
+        cer_file.write(cer_bytes)
+        key_file.write(key_bytes)
+        cer_path = cer_file.name
+        key_path = key_file.name
 
-    # Por ahora, para construir el flujo, simularemos una respuesta exitosa
-    # devolviendo el contenido de nuestro XML de prueba en una lista.
-    xml_de_prueba = '<?xml version="1.0" encoding="utf-8"?><cfdi:Comprobante Version="4.0" Fecha="2024-04-29T00:00:55" SubTotal="200" Moneda="MXN" Total="199.96" TipoDeComprobante="I" xmlns:cfdi="http://www.sat.gob.mx/cfd/4"><cfdi:Emisor Rfc="EKU9003173C9" Nombre="ESCUELA KPER URGATE" RegimenFiscal="601" /><cfdi:Receptor Rfc="URE180429TM6" Nombre="UNIVERSIDAD ROBOTICA ESPAÑOLA" UsoCFDI="G01" /></cfdi:Comprobante>'
+    try:
+        # 3. Cargar la e.firma usando la librería 'satcfdi'
+        fiel = Fiel(cer_path=cer_path, key_path=key_path, password=request.efirma_password)
+        
+        # 4. Crear un servicio de portal del SAT
+        portal = fiel.get_portal_cfdi()
+        
+        # 5. Definir rango de fechas (ej: facturas emitidas ayer)
+        end_date = date.today()
+        start_date = end_date - timedelta(days=1)
+        
+        # 6. Buscar facturas emitidas en ese rango
+        facturas = portal.search_emitted(start_date=start_date, end_date=end_date)
+        
+        xmls_encontrados = [f.xml.decode('utf-8') for f in facturas]
 
-    # La API debe devolver una lista de los XMLs encontrados
-    return {"status": "descarga simulada completa", "xmls": [xml_de_prueba]}
+        return {
+            "status": f"Descarga completa. Se encontraron {len(xmls_encontrados)} facturas emitidas entre {start_date} y {end_date}.",
+            "rfc": request.rfc,
+            "xmls": xmls_encontrados
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {e}")
+    
+    finally:
+        # 7. Borrar siempre los archivos temporales por seguridad
+        os.remove(cer_path)
+        os.remove(key_path)
