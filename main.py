@@ -5,8 +5,8 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# --- IMPORTACIÓN VALIDADA POR LA DOCUMENTACIÓN OFICIAL ---
-from satcfdi.credentials import Fiel
+# --- IMPORTACIÓN CORREGIDA - MÓDULO CORRECTO ---
+from satcfdi.certifica import Certificate
 
 # (El resto del código es idéntico y correcto)
 class XMLRequest(BaseModel):
@@ -46,8 +46,8 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         key_path = key_file.name
 
     try:
-        fiel = Fiel(cer_path=cer_path, key_path=key_path, password=request.efirma_password)
-        portal = fiel.get_portal_cfdi()
+        certificate = Certificate(cer_path=cer_path, key_path=key_path, password=request.efirma_password)
+        portal = certificate.get_portal_cfdi()
         end_date = date.today()
         start_date = end_date - timedelta(days=5)
         
