@@ -70,3 +70,4 @@ async def descargar_xmls_endpoint(request: DownloadRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en la comunicación con el SAT: {str(e)}")
+        
